@@ -1,72 +1,134 @@
-#include <linux/init.h>      // For module_init, module_exit
-#include <linux/module.h>    // For THIS_MODULE, MODULE_LICENSE, etc.
-#include <linux/fs.h>        // For register_chrdev, unregister_chrdev
-#include <linux/uaccess.h>   // For copy_to_user, copy_from_user (if needed)
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/mutex.h>
 
-#define MY_MAJOR 42       // The Major number 
-#define MYDRV_NAME "mydriver"  // Name 
+#define DEVICE_NAME "sniffer"
+#define MAJOR_NUM 42  // Fixed major number
 
-// simple open just returning 0 for now
-static int mydriver_open(struct inode *inode, struct file *file)
+static DEFINE_MUTEX(packet_lock);
+
+// Simple array to store one packet at a time
+static char packet_data[1500];
+static size_t packet_length = 0;
+static bool packet_available = false;
+
+/*
+ * Netfilter hook function:
+ * Intercepts incoming IPv4 packets (TCP, UDP, ICMP) and stores one packet in a global array.
+ */
+static unsigned int capture_packet(void *priv, struct sk_buff *skb,
+                                   const struct nf_hook_state *state)
 {
-    pr_info("mydriver: device opened\n");
-    return 0; // success
+    struct iphdr *ip_header;
+
+    if (!skb)
+        return NF_ACCEPT;
+
+    ip_header = ip_hdr(skb);
+    if (ip_header->protocol == IPPROTO_TCP ||
+        ip_header->protocol == IPPROTO_UDP ||
+        ip_header->protocol == IPPROTO_ICMP) {
+
+        mutex_lock(&packet_lock);
+        packet_length = skb->len;
+        if (packet_length > sizeof(packet_data))
+            packet_length = sizeof(packet_data);
+        skb_copy_bits(skb, 0, packet_data, packet_length);
+        packet_available = true;
+        mutex_unlock(&packet_lock);
+
+        pr_info("Packet captured - Protocol: %u, Size: %zu bytes\n",
+                ip_header->protocol, packet_length);
+    }
+    return NF_ACCEPT;
 }
 
-// Simple release that prints a message
-static int mydriver_release(struct inode *inode, struct file *file)
-{
-    pr_info("mydriver: device closed\n");
-    return 0; // success
-}
-
-
-static ssize_t mydriver_read(struct file *file, char __user *buf,
-                             size_t len, loff_t *ppos)
-{
-    pr_info("mydriver: read called, returning 0\n");
-    return 0; // 0 = EOF/no data
-}
-
-// Define file operations
-static struct file_operations mydriver_fops = {
-    .owner   = THIS_MODULE,
-    .open    = mydriver_open,
-    .read    = mydriver_read,
-    .release = mydriver_release,
-};
-
-// Called when the module is loaded
-static int __init mydriver_init(void)
+/*
+ * Character device read:
+ * Returns the stored packet to user space if available, then clears it.
+ */
+static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, loff_t *off)
 {
     int ret;
 
-    pr_info("mydriver: loading module...\n");
+    mutex_lock(&packet_lock);
+    if (!packet_available) {
+        mutex_unlock(&packet_lock);
+        return 0;  // No packet available; return EOF
+    }
+    ret = min(len, packet_length);
+    if (copy_to_user(buf, packet_data, ret)) {
+        mutex_unlock(&packet_lock);
+        return -EFAULT;  // Failed to copy data to user space
+    }
+    packet_available = false;  // Mark packet as read
+    mutex_unlock(&packet_lock);
+    return ret;
+}
 
-    // Register this driver with a fixed major number (42)
-    ret = register_chrdev(MY_MAJOR, MYDRV_NAME, &mydriver_fops);
+/*
+ * File operations structure.
+ */
+static struct file_operations sniffer_fops = {
+    .owner = THIS_MODULE,
+    .read  = sniffer_read,
+};
+
+/*
+ * Module initialization:
+ * - Registers the character device using register_chrdev().
+ * - Registers the Netfilter hook.
+ */
+static int __init sniffer_init(void)
+{
+    int ret;
+
+    ret = register_chrdev(MAJOR_NUM, DEVICE_NAME, &sniffer_fops);
     if (ret < 0) {
-        pr_err("mydriver: failed to register_chrdev on major %d\n", MY_MAJOR);
+        pr_err("Failed to register chrdev with major %d\n", MAJOR_NUM);
         return ret;
     }
 
-    pr_info("mydriver: registered on major=%d\n", MY_MAJOR);
-    pr_info("mydriver: module loaded\n");
-    return 0; // success
+    {
+        static struct nf_hook_ops nfho;
+        nfho.hook = capture_packet;
+        nfho.hooknum = NF_INET_PRE_ROUTING;
+        nfho.pf = PF_INET;
+        nfho.priority = NF_IP_PRI_FIRST;
+        ret = nf_register_net_hook(&init_net, &nfho);
+        if (ret < 0) {
+            unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+            pr_err("Failed to register netfilter hook\n");
+            return ret;
+        }
+    }
+
+    pr_info("Packet Sniffer Loaded. Major number: %d\n", MAJOR_NUM);
+    return 0;
 }
 
-// Called when the module is unloaded
-static void __exit mydriver_exit(void)
+/*
+ * Module cleanup:
+ * - Unregisters the Netfilter hook.
+ * - Unregisters the character device.
+ */
+static void __exit sniffer_exit(void)
 {
-    pr_info("mydriver: unloading module...\n");
-    // Unregister from the kernel
-    unregister_chrdev(MY_MAJOR, MYDRV_NAME);
-    pr_info("mydriver: module unloaded\n");
+    nf_unregister_net_hook(&init_net, &capture_packet); // Unregister the hook
+    unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+    pr_info("Packet Sniffer Unloaded.\n");
 }
 
-module_init(mydriver_init);
-module_exit(mydriver_exit);
+module_init(sniffer_init);
+module_exit(sniffer_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Your Name");
-MODULE_DESCRIPTION("Example driver using register_chrdev()");
+MODULE_AUTHOR("Block 3");
+MODULE_DESCRIPTION("Packet Sniffer)");
