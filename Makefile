@@ -1,7 +1,11 @@
-obj-m += mydriver.o
+obj-m += sniffer_char.o
+
+KDIR := /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
 
 all:
-\tmake -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
 clean:
-\tmake -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	rm -f Module.symvers modules.order
