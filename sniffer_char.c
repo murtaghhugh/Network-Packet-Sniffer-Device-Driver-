@@ -17,13 +17,13 @@ static char packet_data[1500];
 static size_t packet_length = 0;
 static bool packet_available = false;
 
-/* Declare the hook ops globally */
+
 static struct nf_hook_ops nfho;
 
-/*
- * Netfilter hook function: Intercepts incoming IPv4 packets (TCP, UDP, ICMP)
- * and stores one packet in a global array.
- */
+
+ //Netfilter hook function: Intercepts incoming IPv4 packets (TCP, UDP, ICMP)
+ //and stores one packet in a global array.
+ 
 static unsigned int capture_packet(void *priv, struct sk_buff *skb,
                                    const struct nf_hook_state *state)
 {
@@ -45,16 +45,22 @@ static unsigned int capture_packet(void *priv, struct sk_buff *skb,
         packet_available = true;
         mutex_unlock(&packet_lock);
 
-        pr_info("Packet captured - Protocol: %u, Size: %zu bytes\n",
-                ip_header->protocol, packet_length);
+        if (ip_header->protocol == IPPROTO_TCP)
+            pr_info("TCP packet captured, size: %zu bytes\n", packet_length);
+        else if (ip_header->protocol == IPPROTO_UDP)
+            pr_info("UDP packet captured, size: %zu bytes\n", packet_length);
+        else if (ip_header->protocol == IPPROTO_ICMP)
+            pr_info("ICMP packet captured, size: %zu bytes\n", packet_length);
+        else
+            pr_info("Other packet captured (protocol %u), size: %zu bytes\n",
+                    ip_header->protocol, packet_length);
     }
     return NF_ACCEPT;
 }
 
-/*
- * Character device read, returns the stored packet to user space if available,
- * then clears it.
- */
+
+//Returns the stored packet to user space if available, then clears it.
+ 
 static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, loff_t *off)
 {
     int ret;
@@ -74,17 +80,17 @@ static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, lof
     return ret;
 }
 
-/*
- * File operations structure.
- */
+
+//File operations structure.
+
 static struct file_operations sniffer_fops = {
     .owner = THIS_MODULE,
     .read  = sniffer_read,
 };
 
-/*
- * Module initialization: Registers the character device and Netfilter hook.
- */
+
+//Registers the character device and Netfilter hook.
+
 static int __init sniffer_init(void)
 {
     int ret;
@@ -112,9 +118,7 @@ static int __init sniffer_init(void)
     return 0;
 }
 
-/*
- * Module cleanup: Unregisters the Netfilter hook and the character device.
- */
+//unregister
 static void __exit sniffer_exit(void)
 {
     /* Unregister the hook using the global nf_hook_ops structure */
@@ -122,7 +126,7 @@ static void __exit sniffer_exit(void)
     unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
     pr_info("Packet Sniffer Unloaded.\n");
 }
-
+    
 module_init(sniffer_init);
 module_exit(sniffer_exit);
 
