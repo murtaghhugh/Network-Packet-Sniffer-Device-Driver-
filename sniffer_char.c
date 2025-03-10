@@ -13,15 +13,16 @@
 #define MAJOR_NUM 42  // Fixed major number
 
 static DEFINE_MUTEX(packet_lock);
-
-// Simple array to store one packet at a time
 static char packet_data[1500];
 static size_t packet_length = 0;
 static bool packet_available = false;
 
+/* Declare the hook ops globally */
+static struct nf_hook_ops nfho;
+
 /*
- * Netfilter hook function:
- * Intercepts incoming IPv4 packets (TCP, UDP, ICMP) and stores one packet in a global array.
+ * Netfilter hook function: Intercepts incoming IPv4 packets (TCP, UDP, ICMP)
+ * and stores one packet in a global array.
  */
 static unsigned int capture_packet(void *priv, struct sk_buff *skb,
                                    const struct nf_hook_state *state)
@@ -51,8 +52,8 @@ static unsigned int capture_packet(void *priv, struct sk_buff *skb,
 }
 
 /*
- * Character device read:
- * Returns the stored packet to user space if available, then clears it.
+ * Character device read, returns the stored packet to user space if available,
+ * then clears it.
  */
 static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, loff_t *off)
 {
@@ -82,9 +83,7 @@ static struct file_operations sniffer_fops = {
 };
 
 /*
- * Module initialization:
- * - Registers the character device using register_chrdev().
- * - Registers the Netfilter hook.
+ * Module initialization: Registers the character device and Netfilter hook.
  */
 static int __init sniffer_init(void)
 {
@@ -96,18 +95,17 @@ static int __init sniffer_init(void)
         return ret;
     }
 
-    {
-        static struct nf_hook_ops nfho;
-        nfho.hook = capture_packet;
-        nfho.hooknum = NF_INET_PRE_ROUTING;
-        nfho.pf = PF_INET;
-        nfho.priority = NF_IP_PRI_FIRST;
-        ret = nf_register_net_hook(&init_net, &nfho);
-        if (ret < 0) {
-            unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
-            pr_err("Failed to register netfilter hook\n");
-            return ret;
-        }
+    /* Initialize the global nf_hook_ops structure */
+    nfho.hook = capture_packet;
+    nfho.hooknum = NF_INET_PRE_ROUTING;
+    nfho.pf = PF_INET;
+    nfho.priority = NF_IP_PRI_FIRST;
+
+    ret = nf_register_net_hook(&init_net, &nfho);
+    if (ret < 0) {
+        unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+        pr_err("Failed to register netfilter hook\n");
+        return ret;
     }
 
     pr_info("Packet Sniffer Loaded. Major number: %d\n", MAJOR_NUM);
@@ -115,13 +113,12 @@ static int __init sniffer_init(void)
 }
 
 /*
- * Module cleanup:
- * - Unregisters the Netfilter hook.
- * - Unregisters the character device.
+ * Module cleanup: Unregisters the Netfilter hook and the character device.
  */
 static void __exit sniffer_exit(void)
 {
-    nf_unregister_net_hook(&init_net, &capture_packet); // Unregister the hook
+    /* Unregister the hook using the global nf_hook_ops structure */
+    nf_unregister_net_hook(&init_net, &nfho);
     unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
     pr_info("Packet Sniffer Unloaded.\n");
 }
@@ -131,4 +128,4 @@ module_exit(sniffer_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Block 3");
-MODULE_DESCRIPTION("Packet Sniffer)");
+MODULE_DESCRIPTION("Packet Sniffer");
