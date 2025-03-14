@@ -1,5 +1,5 @@
 
-# 🖥️ Network Packet Sniffer
+# Network Packet Sniffer
 
 ![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)
 ![Kernel Version](https://img.shields.io/badge/Kernel-6.11.0-blue)
@@ -23,7 +23,7 @@
 
 ---
 
-## 🚀 Building the Module
+## Building the Module
 To compile the module:
 ```bash
 make clean
@@ -32,7 +32,7 @@ make
 
 ---
 
-## 🖥️ Load the Module
+## 🖥Load the Module
 To insert the module into the kernel:
 ```bash
 sudo insmod sniffer_char.ko
@@ -49,7 +49,7 @@ Example output:
 
 ---
 
-## 🌐 Create the Device File
+## Create the Device File
 Create the device file using the assigned major number:  
 (Replace `511` with the actual major number from `dmesg`)
 ```bash
@@ -59,7 +59,7 @@ sudo chmod 666 /dev/sniffer
 
 ---
 
-## 🌐 Set Filters (TCP/UDP Capture)
+## Set Filters (TCP/UDP Capture)
 You can control which packets to capture using the `ioctl` interface:
 
 | Filter Mode | Command | Description |
@@ -85,7 +85,7 @@ Example output:
 
 ---
 
-## 📥 Read Captured Packets
+## Read Captured Packets
 You can read captured TCP/UDP packets from the FIFO buffer:
 
 ### Option 1 — Use `cat`:
@@ -100,7 +100,7 @@ dd if=/dev/sniffer bs=256 count=1
 
 ---
 
-## 📊 Check Port Usage Statistics
+## Check Port Usage Statistics
 Your module stores per-port packet counts in `/proc`:
 
 ```bash
@@ -184,7 +184,7 @@ Example output:
 
 ---
 
-## 🚀 Optimize Performance (Optional)
+## Optimize Performance (Optional)
 ### ✅ Increase FIFO Buffer Size  
 If the buffer is filling up too quickly, increase the FIFO size in `sniffer_char.c`:
 ```c
@@ -198,7 +198,7 @@ make
 
 ---
 
-## 📂 Make the Module Load at Boot (Optional)
+## Make the Module Load at Boot (Optional)
 1. Copy the module to the kernel directory:
 ```bash
 sudo cp sniffer_char.ko /lib/modules/$(uname -r)/kernel/drivers/misc/
@@ -211,7 +211,7 @@ echo "sniffer_char" | sudo tee -a /etc/modules
 
 ---
 
-## 🧹 Clean Build Files
+## Clean Build Files
 If you need to clean up:
 ```bash
 make clean
@@ -219,16 +219,16 @@ make clean
 
 ---
 
-## 🎉 DONE!  
+## DONE!  
 You now have a fully functional packet sniffer. The module is dynamically assigned a major number, captures TCP/UDP packets using FIFO, and filters them based on `ioctl` settings. 🔥
 
 ---
 
-## 🚀 Pro Tips for Better Performance  
+## Pro Tips for Better Performance  
 ✅ Increase FIFO size for high-traffic environments  
 ✅ Filter out low-priority traffic using `iptables`  
 ✅ Write a script to auto-load the module and set filters at boot  
 
 ---
 
-🔥 **Now Go Capture Some Packets!** 😎
+**Now Go Capture Some Packets!** 
