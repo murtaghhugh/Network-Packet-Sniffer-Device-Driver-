@@ -6,7 +6,6 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/fs.h>
-#include <linux/uaccess.h>
 #include <linux/mutex.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
@@ -15,9 +14,9 @@
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
 #include <linux/timekeeping.h>
+#include <linux/uaccess.h>
 
 #define DEVICE_NAME "Network Packet Sniffer"
-#define MAJOR_NUM 42
 #define FIFO_SIZE 8192
 #define INFO_BUFFER_SIZE 256
 
@@ -31,8 +30,9 @@ static DECLARE_WAIT_QUEUE_HEAD(udp_wait_queue);
 static struct nf_hook_ops nfho;
 static unsigned int port_usage[65536] = {0};
 static int filter_mode = 0;
+static int major_num = 0;
 
-// Capture Packet (Improved)
+// Capture Packet
 static unsigned int capture_packet(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
     struct iphdr *ip_hdr_ptr;
     struct tcphdr *tcp_header;
@@ -93,7 +93,7 @@ static unsigned int capture_packet(void *priv, struct sk_buff *skb, const struct
     return NF_ACCEPT;
 }
 
-// Improved sniffer_read
+// Read from FIFO
 static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, loff_t *off) {
     int ret;
     char *temp_buf;
@@ -140,15 +140,45 @@ copy_to_user:
     return ret;
 }
 
-static struct file_operations fops = {
+// IOCTL
+#define SNIFFER_SET_FILTER _IOW('p', 1, int)
+
+static long sniffer_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+    int mode;
+
+    printk(KERN_INFO "sniffer: ioctl called with cmd=%u\n", cmd);
+
+    switch (cmd) {
+        case SNIFFER_SET_FILTER:
+            if (copy_from_user(&mode, (int __user *)arg, sizeof(mode))) {
+                return -EFAULT;
+            }
+            if (mode < 0 || mode > 2) return -EINVAL;
+            filter_mode = mode;
+            printk(KERN_INFO "sniffer: Filter mode set to %d\n", filter_mode);
+            break;
+        default:
+            return -ENOTTY;
+    }
+
+    return 0;
+}
+
+// File Operations
+static const struct file_operations fops = {
     .owner = THIS_MODULE,
     .read = sniffer_read,
+    .unlocked_ioctl = sniffer_ioctl,
 };
 
 static int __init sniffer_init(void) {
     int ret;
-    ret = register_chrdev(MAJOR_NUM, DEVICE_NAME, &fops);
-    if (ret < 0) return ret;
+
+    major_num = register_chrdev(0, DEVICE_NAME, &fops);  // Dynamic major number
+    if (major_num < 0) {
+        printk(KERN_ALERT "Failed to register device with %d\n", major_num);
+        return major_num;
+    }
 
     INIT_KFIFO(tcp_fifo);
     INIT_KFIFO(udp_fifo);
@@ -160,24 +190,24 @@ static int __init sniffer_init(void) {
 
     ret = nf_register_net_hook(&init_net, &nfho);
     if (ret < 0) {
-        unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+        unregister_chrdev(major_num, DEVICE_NAME);
         return ret;
     }
 
-    pr_info("sniffer: Module loaded. Major number: %d\n", MAJOR_NUM);
-
+    printk(KERN_INFO "sniffer: Module loaded. Major number: %d\n", major_num);
     return 0;
 }
 
 static void __exit sniffer_exit(void) {
     nf_unregister_net_hook(&init_net, &nfho);
-    unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
-    pr_info("sniffer: Module unloaded.\n");
+    unregister_chrdev(major_num, DEVICE_NAME);
+    printk(KERN_INFO "sniffer: Module unloaded.\n");
 }
+
 
 module_init(sniffer_init);
 module_exit(sniffer_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Block 3");
-MODULE_DESCRIPTION("Packet Sniffer with FIFO (TCP/UDP only) and rate limiting");
+MODULE_DESCRIPTION("Packet Sniffer with FIFO and IOCTL");
