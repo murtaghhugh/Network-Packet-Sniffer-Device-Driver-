@@ -1,0 +1,183 @@
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/mutex.h>
+#include <linux/wait.h>
+#include <linux/sched.h>
+#include <linux/kfifo.h>
+#include <linux/jiffies.h>
+#include <linux/slab.h>
+#include <linux/proc_fs.h>
+#include <linux/timekeeping.h>
+
+#define DEVICE_NAME "Network Packet Sniffer"
+#define MAJOR_NUM 42
+#define FIFO_SIZE 8192
+#define INFO_BUFFER_SIZE 256
+
+static DEFINE_MUTEX(packet_lock);
+static DECLARE_KFIFO(tcp_fifo, char, FIFO_SIZE);
+static DECLARE_KFIFO(udp_fifo, char, FIFO_SIZE);
+
+static DECLARE_WAIT_QUEUE_HEAD(tcp_wait_queue);
+static DECLARE_WAIT_QUEUE_HEAD(udp_wait_queue);
+
+static struct nf_hook_ops nfho;
+static unsigned int port_usage[65536] = {0};
+static int filter_mode = 0;
+
+// Capture Packet (Improved)
+static unsigned int capture_packet(void *priv, struct sk_buff *skb, const struct nf_hook_state *state) {
+    struct iphdr *ip_hdr_ptr;
+    struct tcphdr *tcp_header;
+    struct udphdr *udp_header;
+    struct timespec64 ts;
+
+    char info[INFO_BUFFER_SIZE];
+    size_t info_len;
+
+    static unsigned long last_jiffies = 0;
+    if (time_after(jiffies, last_jiffies + msecs_to_jiffies(100))) {
+        last_jiffies = jiffies;
+    } else {
+        return NF_ACCEPT;
+    }
+
+    if (!skb) return NF_ACCEPT;
+
+    ktime_get_real_ts64(&ts);
+    ip_hdr_ptr = ip_hdr(skb);
+
+    if (ip_hdr_ptr->protocol == IPPROTO_TCP || ip_hdr_ptr->protocol == IPPROTO_UDP) {
+        if (filter_mode == 1 && ip_hdr_ptr->protocol == IPPROTO_UDP) return NF_ACCEPT;
+        if (filter_mode == 2 && ip_hdr_ptr->protocol == IPPROTO_TCP) return NF_ACCEPT;
+
+        if (!mutex_trylock(&packet_lock)) return NF_ACCEPT;
+
+        if (ip_hdr_ptr->protocol == IPPROTO_TCP) {
+            tcp_header = tcp_hdr(skb);
+            port_usage[ntohs(tcp_header->source)]++;
+            info_len = snprintf(info, INFO_BUFFER_SIZE,
+                "[%lld.%.6ld] TCP Src: %pI4:%u -> Dst: %pI4:%u\n",
+                ts.tv_sec, ts.tv_nsec / 1000,
+                &ip_hdr_ptr->saddr, ntohs(tcp_header->source),
+                &ip_hdr_ptr->daddr, ntohs(tcp_header->dest));
+
+            if (kfifo_avail(&tcp_fifo) >= info_len) {
+                kfifo_in(&tcp_fifo, info, info_len);
+                wake_up_interruptible(&tcp_wait_queue);
+            }
+        } else {
+            udp_header = udp_hdr(skb);
+            port_usage[ntohs(udp_header->dest)]++;
+            info_len = snprintf(info, INFO_BUFFER_SIZE,
+                "[%lld.%.6ld] UDP Src: %pI4:%u -> Dst: %pI4:%u\n",
+                ts.tv_sec, ts.tv_nsec / 1000,
+                &ip_hdr_ptr->saddr, ntohs(udp_header->source),
+                &ip_hdr_ptr->daddr, ntohs(udp_header->dest));
+
+            if (kfifo_avail(&udp_fifo) >= info_len) {
+                kfifo_in(&udp_fifo, info, info_len);
+                wake_up_interruptible(&udp_wait_queue);
+            }
+        }
+        mutex_unlock(&packet_lock);
+    }
+
+    return NF_ACCEPT;
+}
+
+// Improved sniffer_read
+static ssize_t sniffer_read(struct file *file, char __user *buf, size_t len, loff_t *off) {
+    int ret;
+    char *temp_buf;
+
+    if (len > FIFO_SIZE) return -EINVAL;
+
+    temp_buf = kmalloc(len, GFP_KERNEL);
+    if (!temp_buf) return -ENOMEM;
+
+    if (filter_mode == 1 || filter_mode == 0) {
+        if (wait_event_interruptible(tcp_wait_queue, kfifo_len(&tcp_fifo) > 0)) {
+            kfree(temp_buf);
+            return -ERESTARTSYS;
+        }
+        mutex_lock(&packet_lock);
+        ret = kfifo_out(&tcp_fifo, temp_buf, len);
+        mutex_unlock(&packet_lock);
+
+        if (ret > 0) goto copy_to_user;
+    }
+
+    if (filter_mode == 2 || filter_mode == 0) {
+        if (wait_event_interruptible(udp_wait_queue, kfifo_len(&udp_fifo) > 0)) {
+            kfree(temp_buf);
+            return -ERESTARTSYS;
+        }
+        mutex_lock(&packet_lock);
+        ret = kfifo_out(&udp_fifo, temp_buf, len);
+        mutex_unlock(&packet_lock);
+
+        if (ret > 0) goto copy_to_user;
+    }
+
+    kfree(temp_buf);
+    return 0;
+
+copy_to_user:
+    if (copy_to_user(buf, temp_buf, ret)) {
+        kfree(temp_buf);
+        return -EFAULT;
+    }
+
+    kfree(temp_buf);
+    return ret;
+}
+
+static struct file_operations fops = {
+    .owner = THIS_MODULE,
+    .read = sniffer_read,
+};
+
+static int __init sniffer_init(void) {
+    int ret;
+    ret = register_chrdev(MAJOR_NUM, DEVICE_NAME, &fops);
+    if (ret < 0) return ret;
+
+    INIT_KFIFO(tcp_fifo);
+    INIT_KFIFO(udp_fifo);
+
+    nfho.hook = capture_packet;
+    nfho.hooknum = NF_INET_PRE_ROUTING;
+    nfho.pf = PF_INET;
+    nfho.priority = NF_IP_PRI_FIRST;
+
+    ret = nf_register_net_hook(&init_net, &nfho);
+    if (ret < 0) {
+        unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+        return ret;
+    }
+
+    pr_info("sniffer: Module loaded. Major number: %d\n", MAJOR_NUM);
+
+    return 0;
+}
+
+static void __exit sniffer_exit(void) {
+    nf_unregister_net_hook(&init_net, &nfho);
+    unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
+    pr_info("sniffer: Module unloaded.\n");
+}
+
+module_init(sniffer_init);
+module_exit(sniffer_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Block 3");
+MODULE_DESCRIPTION("Packet Sniffer with FIFO (TCP/UDP only) and rate limiting");
