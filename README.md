@@ -27,6 +27,9 @@
 To compile the module:
 ```bash
 make clean
+```
+
+```bash
 make
 ```
 
@@ -54,6 +57,9 @@ Create the device file using the assigned major number:
 (Replace `511` with the actual major number from `dmesg`)
 ```bash
 sudo mknod /dev/sniffer c 511 0
+```
+
+```bash
 sudo chmod 666 /dev/sniffer
 ```
 
@@ -193,6 +199,8 @@ If the buffer is filling up too quickly, increase the FIFO size in `sniffer_char
 Then rebuild the module:
 ```bash
 make clean
+```
+```bash
 make
 ```
 
