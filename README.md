@@ -7,7 +7,7 @@
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 - [Building the Module](#building-the-module)
 - [Load the Module](#load-the-module)
 - [Create the Device File](#create-the-device-file)
@@ -35,7 +35,7 @@ make
 
 ---
 
-## 🖥Load the Module
+##Load the Module
 To insert the module into the kernel:
 ```bash
 sudo insmod sniffer_char.ko
