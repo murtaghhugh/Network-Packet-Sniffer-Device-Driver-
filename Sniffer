@@ -63,6 +63,9 @@ static unsigned int port_usage[65536] = {0}; // Array to Track No. of Packets pe
 static int filter_mode = 0; // Filter Mode off Packets Received 
 static int major_num = 0; // Major No. for the Character Device 
 
+static struct proc_dir_entry *proc_entry; // /proc/sniffer_stats
+
+
 
 // =====================================
 // Capture Packet Logic
@@ -204,6 +207,30 @@ copy_to_user:
     return ret;
 }
 
+// =====================================
+// Read Sniffer Statistics
+// =====================================
+
+static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {
+    char buf[256];
+    int len;
+
+    if (*ppos > 0 || count < 256) return 0; // Stop reading after first call
+
+    len = snprintf(buf, sizeof(buf), 
+        "Filter Mode: %d\nTCP Packets: %u\nUDP Packets: %u\n",
+        filter_mode, port_usage[80], port_usage[53]); // Example: HTTP and DNS ports
+
+    if (copy_to_user(ubuf, buf, len)) return -EFAULT;
+
+    *ppos = len;
+    return len;
+}
+
+static const struct proc_ops proc_fops = {
+    .proc_read = proc_read, // Call our function when reading /proc/sniffer_stats
+};
+
 
 // =====================================
 // IOCTL Logic
@@ -257,6 +284,17 @@ static int __init sniffer_init(void) {
         return ret;
     }
 
+// Create the /proc entry
+    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);
+    if (!proc_entry) {
+        printk(KERN_ERR "sniffer: Failed to create /proc/sniffer_stats\n");
+
+        // Cleanup previously registered components if proc creation fails
+        nf_unregister_net_hook(&init_net, &nfho);
+        unregister_chrdev(major_num, DEVICE_NAME);
+        return -ENOMEM;
+    }
+
     printk(KERN_INFO "sniffer: Module loaded. Major number: %d\n", major_num);
     return 0;
 }
@@ -267,6 +305,7 @@ static int __init sniffer_init(void) {
 // =====================================
 
 static void __exit sniffer_exit(void) {
+proc_remove(proc_entry);  // Remove /proc/sniffer_stats
     nf_unregister_net_hook(&init_net, &nfho);
     unregister_chrdev(major_num, DEVICE_NAME);
     printk(KERN_INFO "sniffer: Module unloaded\n");
