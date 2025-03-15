@@ -41,7 +41,7 @@ To insert the module into the kernel:
 sudo insmod sniffer_char.ko
 ```
 
-✅ Confirm the module has been loaded and check the assigned major number:
+Confirm the module has been loaded and check the assigned major number:
 ```bash
 dmesg | grep sniffer
 ```
@@ -79,7 +79,7 @@ Example:
 ./sniffer_user 1
 ```
 
-✅ Confirm that the filter is set:
+Confirm that the filter is set:
 ```bash
 dmesg | tail -10
 ```
@@ -121,14 +121,14 @@ Port 22:   5 packets
 
 ---
 
-## 🧪 Test by Generating Traffic
-### ✅ Ping Test  
+## Test by Generating Traffic
+### Ping Test  
 (For basic connectivity check — ICMP traffic won’t be captured)
 ```bash
 ping -c 4 google.com
 ```
 
-### ✅ Netcat Test (TCP)  
+### Netcat Test (TCP)  
 1. Start a Netcat listener:
 ```bash
 nc -l -p 4444
@@ -138,20 +138,20 @@ nc -l -p 4444
 echo "Hello" | nc 127.0.0.1 4444
 ```
 
-✅ You should see the packet being captured:
+You should see the packet being captured:
 ```
 [1741960225.471292] TCP Src: 127.0.0.1:5555 -> Dst: 127.0.0.1:4444
 ```
 
 ---
 
-## ✅ Unload the Module
+## Unload the Module
 To remove the module from the kernel:
 ```bash
 sudo rmmod sniffer_char
 ```
 
-✅ Confirm successful removal:
+Confirm successful removal:
 ```bash
 dmesg | tail -10
 ```
@@ -163,7 +163,7 @@ Example output:
 ---
 
 <details>
-  <summary>🔎 Debugging and Troubleshooting</summary>
+  <summary>Debugging and Troubleshooting</summary>
   
   - **Check Kernel Logs:**  
   ```bash
@@ -191,7 +191,7 @@ Example output:
 ---
 
 ## Optimize Performance (Optional)
-### ✅ Increase FIFO Buffer Size  
+### Increase FIFO Buffer Size  
 If the buffer is filling up too quickly, increase the FIFO size in `sniffer_char.c`:
 ```c
 #define FIFO_SIZE 32768
@@ -227,16 +227,5 @@ make clean
 
 ---
 
-## DONE!  
-You now have a fully functional packet sniffer. The module is dynamically assigned a major number, captures TCP/UDP packets using FIFO, and filters them based on `ioctl` settings. 🔥
-
----
-
-## Pro Tips for Better Performance  
-✅ Increase FIFO size for high-traffic environments  
-✅ Filter out low-priority traffic using `iptables`  
-✅ Write a script to auto-load the module and set filters at boot  
-
----
-
-**Now Go Capture Some Packets!** 
+## DONE  
+You now have a fully functional packet sniffer. The module is dynamically assigned a major number, captures TCP/UDP packets using FIFO, and filters them based on `ioctl` settings. 
