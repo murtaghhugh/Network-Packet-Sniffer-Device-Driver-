@@ -3,11 +3,11 @@
 // =====================================
 
 // Core Kernel
-#include <linux/module.h>                   // Load and Unload the Kernel Modules
-#include <linux/kernel.h>                   // Kernel Logging and General Utilites
+#include <linux/module.h>                   // Allows module to be loaded and unloaded
+#include <linux/kernel.h>                   // Allows u to log a message with printk, and General Utilites
 
 // Networking 
-#include <linux/netfilter.h>                // Net-filter -> Packet Capture
+#include <linux/netfilter.h>                // Net-filter -> a framework inside kernal used for Packet Capture
 #include <linux/netfilter_ipv4.h>           // IPv4 Packet Capture
 #include <linux/ip.h>                       // Working with IP Headers
 #include <linux/tcp.h>                      // Working with TCP Headers
