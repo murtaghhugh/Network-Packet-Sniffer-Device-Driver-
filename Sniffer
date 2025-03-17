@@ -43,6 +43,12 @@
 #define INFO_BUFFER_SIZE 256    // Size of Packets in Buffer
 #define SNIFFER_SET_FILTER _IOW('p', 1, int)    // IOCTL Command for Filter 
 
+// Function prototypes
+static long sniffer_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+
+// Global variable to stop the loop on signal (must be volatile because it’s accessed by a signal handler)
+volatile int stop = 0;
+
 
 // =====================================
 // Global Variables
@@ -63,7 +69,7 @@ static unsigned int port_usage[65536] = {0}; // Array to Track No. of Packets pe
 static int filter_mode = 0; // Filter Mode off Packets Received 
 static int major_num = 0; // Major No. for the Character Device 
 
-static struct proc_dir_entry *proc_entry; // /proc/sniffer_stats
+static struct proc_dir_entry *proc_entry; // /proc/sniffer_statsnan
 
 
 
@@ -207,22 +213,26 @@ copy_to_user:
     return ret;
 }
 
-// =====================================
+/// =====================================
 // Read Sniffer Statistics
 // =====================================
 
-static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {    //his function gets called when a user reads /proc/sniffer_stats
+static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) { //his function gets called when a user reads /proc/sniffer_stats
     char buf[256];
-    int len;    //Will store the length of the formatted string.
+    int len; //Will store the length of the formatted string.
 
-    if (*ppos > 0 || count < 256) return 0; // Stop reading after first call
+    if (*ppos > 0 || count < 256) return 0; // Stop reading after first call    
 
-    len = snprintf(buf, sizeof(buf),     //snprintf returns number of characters in string, len = this number.
-        "Filter Mode: %d\n Port 80:\nTCP Packets: %u\nUDP Packets: %u\n\nPort 53:\nTCP Packets: %u\nUDP Packets: %u\n",
-        filter_mode, port_usage[80], port_usage[80],port_usage[53], port_usage[53],); // Example: HTTP and DNS ports
+    len = snprintf(buf, sizeof(buf), //snprintf returns number of characters in string, len = this number.
+        "Filter Mode: %d\n" 
+        "Port 80:\nTCP Packets: %u\nUDP Packets: %u\n\n"
+        "Port 53:\nTCP Packets: %u\nUDP Packets: %u\n",
+        filter_mode, 
+        (unsigned int)port_usage[80], (unsigned int)port_usage[80], 
+        (unsigned int)port_usage[53], (unsigned int)port_usage[53]); 
 
-    if (copy_to_user(ubuf, buf, len)) return -EFAULT;       //moves data from buf(kernal space) to ubuf(user space)
-                                                        //if copy_to_user fails, return -EFAULT (error : bad memory access)
+    if (copy_to_user(ubuf, buf, len)) return -EFAULT; //moves data from buf(kernal space) to ubuf(user space)
+                                                      //if copy_to_user fails, return -EFAULT (error : bad memory access)
 
     *ppos = len;        //updates file position so the next read starts from end
     return len;        //how many bytes were actually written
@@ -269,10 +279,19 @@ static const struct file_operations fops = {
 // =====================================
 
 static int __init sniffer_init(void) {
+    
+    //#define major_num 240 //Tried to get the system to do it dynamically but have been unable to do it with the /proc code as of now - might have gotten it to work
     int ret;
 
     major_num = register_chrdev(0, DEVICE_NAME, &fops);
-    if (major_num < 0) return major_num;
+    if (major_num < 0) {
+        printk(KERN_ERR "sniffer: Failed to register character device. Error: %d\n", major_num);
+        return major_num;
+    } else {
+        printk(KERN_INFO "sniffer: Device registered with major number: %d\n", major_num);
+    }
+
+
 
     nfho.hook = capture_packet;
     nfho.hooknum = NF_INET_PRE_ROUTING;
@@ -284,12 +303,8 @@ static int __init sniffer_init(void) {
         unregister_chrdev(major_num, DEVICE_NAME);
         return ret;
     }
-
-// Create the /proc entry
-    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);  // creates a file /proc/sniffer_stats      
-                                                                        // permission = 0666 meaning read and write for everyone
-                                                                        //Links the file to proc_fops, meaning:
-                                                                        //When a user reads /proc/sniffer_stats, it calls proc_read().
+    
+    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);
     if (!proc_entry) {
         printk(KERN_ERR "sniffer: Failed to create /proc/sniffer_stats\n");
 
@@ -299,9 +314,13 @@ static int __init sniffer_init(void) {
         return -ENOMEM;
     }
 
+    printk(KERN_INFO "sniffer: /proc/sniffer_stats created successfully.\n");
+
     printk(KERN_INFO "sniffer: Module loaded. Major number: %d\n", major_num);
     return 0;
-}
+
+    }
+
 
 
 // =====================================
