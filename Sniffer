@@ -211,20 +211,21 @@ copy_to_user:
 // Read Sniffer Statistics
 // =====================================
 
-static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {
+static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {    //his function gets called when a user reads /proc/sniffer_stats
     char buf[256];
-    int len;
+    int len;    //Will store the length of the formatted string.
 
     if (*ppos > 0 || count < 256) return 0; // Stop reading after first call
 
-    len = snprintf(buf, sizeof(buf), 
+    len = snprintf(buf, sizeof(buf),     //snprintf returns number of characters in string, len = this number.
         "Filter Mode: %d\n Port 80:\nTCP Packets: %u\nUDP Packets: %u\n\nPort 53:\nTCP Packets: %u\nUDP Packets: %u\n",
         filter_mode, port_usage[80], port_usage[80],port_usage[53], port_usage[53],); // Example: HTTP and DNS ports
 
-    if (copy_to_user(ubuf, buf, len)) return -EFAULT;
+    if (copy_to_user(ubuf, buf, len)) return -EFAULT;       //moves data from buf(kernal space) to ubuf(user space)
+                                                        //if copy_to_user fails, return -EFAULT (error : bad memory access)
 
-    *ppos = len;
-    return len;
+    *ppos = len;        //updates file position so the next read starts from end
+    return len;        //how many bytes were actually written
 }
 
 static const struct proc_ops proc_fops = {
@@ -285,7 +286,10 @@ static int __init sniffer_init(void) {
     }
 
 // Create the /proc entry
-    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);
+    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);  // creates a file /proc/sniffer_stats      
+                                                                        // permission = 0666 meaning read and write for everyone
+                                                                        //Links the file to proc_fops, meaning:
+                                                                        //When a user reads /proc/sniffer_stats, it calls proc_read().
     if (!proc_entry) {
         printk(KERN_ERR "sniffer: Failed to create /proc/sniffer_stats\n");
 
