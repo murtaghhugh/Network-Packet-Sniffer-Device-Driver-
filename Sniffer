@@ -219,7 +219,7 @@ static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, lof
 
     len = snprintf(buf, sizeof(buf), 
         "Filter Mode: %d\n Port 80:\nTCP Packets: %u\nUDP Packets: %u\n\nPort 53:\nTCP Packets: %u\nUDP Packets: %u\n",
-        filter_mode, port_usage[80], port_usage[53]); // Example: HTTP and DNS ports
+        filter_mode, port_usage[80], port_usage[80],port_usage[53], port_usage[53],); // Example: HTTP and DNS ports
 
     if (copy_to_user(ubuf, buf, len)) return -EFAULT;
 
