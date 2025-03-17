@@ -16,6 +16,7 @@
 - [Check Port Usage Statistics](#check-port-usage-statistics)
 - [Test by Generating Traffic](#test-by-generating-traffic)
 - [Unload the Module](#unload-the-module)
+- [Verify `/proc` File](#verify-proc-file)
 - [Debugging and Troubleshooting](#debugging-and-troubleshooting)
 - [Optimize Performance](#optimize-performance)
 - [Make the Module Load at Boot](#make-the-module-load-at-boot)
@@ -35,7 +36,7 @@ make
 
 ---
 
-##Load the Module
+## Load the Module
 To insert the module into the kernel:
 ```bash
 sudo insmod sniffer_char.ko
@@ -141,6 +142,39 @@ echo "Hello" | nc 127.0.0.1 4444
 You should see the packet being captured:
 ```
 [1741960225.471292] TCP Src: 127.0.0.1:5555 -> Dst: 127.0.0.1:4444
+```
+
+---
+
+## Verify `/proc` File
+To confirm that the `/proc` file has been created:
+
+1. **List available `/proc` files**:
+```bash
+ls /proc | grep sniffer
+```
+
+2. **Check the contents of `/proc/sniffer_stats`**:
+```bash
+cat /proc/sniffer_stats
+```
+
+Example output:
+```
+Filter Mode: 1
+Port 80:
+TCP Packets: 30
+UDP Packets: 12
+```
+
+3. **Check the major number assigned**:
+```bash
+cat /proc/devices | grep sniffer
+```
+
+4. **Confirm successful creation of `/dev/sniffer`**:
+```bash
+ls -l /dev/sniffer
 ```
 
 ---
