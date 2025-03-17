@@ -2,15 +2,14 @@
 // Include Headers
 // =====================================
 
-#include <stdio.h>          // For standard I/O functions (printf, fprintf)
-#include <stdlib.h>         // For general utilities (exit, atoi)
-#include <fcntl.h>          // For file control (open, close)
-#include <unistd.h>         // For file operations (read, write)
-#include <sys/ioctl.h>      // For ioctl system call
-#include <string.h>         // For string functions
-#include <errno.h>          // For error handling
-#include <signal.h>         // For signal handling (Ctrl+C)
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <string.h>
+#include <errno.h>
+#include <signal.h>
 
 // =====================================
 // Definitions and Constants
@@ -19,43 +18,27 @@
 #define DEVICE_FILE "/dev/sniffer"
 #define SNIFFER_SET_FILTER _IOW('p', 1, int)
 
-//Filter MOdes
+// Global stop flag for signal handling
+volatile sig_atomic_t stop = 0;
+
 #define FILTER_TCP 1
 #define FILTER_UDP 2
 #define FILTER_ALL 0
 
 #define BUFFER_SIZE 256 
 
-
 // =====================================
 // Signal Handling
 // =====================================
 
-/**
- * handle_signal - Handles SIGINT (Ctrl+C) to stop packet capture.
- * 
- * @signum: Signal number.
- *
- * Sets the stop flag to 1, which will stop the capture loop.
- */
 void handle_signal(int signum) {
     stop = 1;
 }
 
-
 // =====================================
-// Set Filter Mode using IOCTL
+// Set Filter Mode
 // =====================================
 
-/**
- * set_filter - Sets the packet filter mode via ioctl.
- *
- * @fd: File descriptor for the device file.
- * @mode: Filter mode (0 = all, 1 = TCP, 2 = UDP).
- *
- * Uses the ioctl system call to set the packet filter mode.
- * Exits if the ioctl call fails.
- */
 void set_filter(int fd, int mode) {
     if (ioctl(fd, SNIFFER_SET_FILTER, &mode) < 0) {
         perror("Failed to set filter");
@@ -64,55 +47,36 @@ void set_filter(int fd, int mode) {
     printf("[INFO] Filter mode set to %d\n", mode);
 }
 
-
 // =====================================
 // Read Captured Packets
 // =====================================
 
-/**
- * read_packets - Reads captured packets from the device file.
- *
- * @fd: File descriptor for the device file.
- *
- * Continuously reads packets from the device file and writes them to stdout.
- * Stops when the stop flag is set or a read error occurs.
- */
 void read_packets(int fd) {
     char buffer[BUFFER_SIZE];
     int bytes_read;
 
     while (!stop) {
-        bytes_read = read(fd, buffer, BUFFER_SIZE);
+        bytes_read = read(fd, buffer, sizeof(buffer));
         if (bytes_read < 0) {
             if (errno == EINTR) {
                 // Interrupted by signal
                 break;
+            } else {
+                perror("Failed to read");
+                exit(EXIT_FAILURE);
             }
-            perror("Failed to read");
-            exit(EXIT_FAILURE);
-        } 
+        }
 
         // Write data to stdout
         write(STDOUT_FILENO, buffer, bytes_read);
+        fflush(stdout);
     }
 }
-
 
 // =====================================
 // Main Function
 // =====================================
 
-/**
- * main - Entry point for the packet sniffer user program.
- *
- * @argc: Argument count.
- * @argv: Argument vector (program arguments).
- *
- * Handles command line arguments, opens the device file,
- * sets the filter mode, and reads packets until stopped.
- *
- * Return: 0 on success, non-zero on failure.
- */
 int main(int argc, char *argv[]) {
     int fd;
     int mode;
