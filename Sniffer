@@ -63,7 +63,7 @@ static unsigned int port_usage[65536] = {0}; // Array to Track No. of Packets pe
 static int filter_mode = 0; // Filter Mode off Packets Received 
 static int major_num = 0; // Major No. for the Character Device 
 
-static struct proc_dir_entry *proc_entry; // /proc/sniffer_stats
+static struct proc_dir_entry *proc_entry; // proc_entry is a pointer to sttruct proc_dir_entry. this structure represents a file in /proc(/proc/sniffer_stats)
 
 
 
@@ -211,24 +211,37 @@ copy_to_user:
 // Read Sniffer Statistics
 // =====================================
 
-static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {
-    char buf[256];
-    int len;
+static ssize_t proc_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos) {   //This function gets called when a user reads /proc/sniffer_stats(returns network snifferstats to user)
 
-    if (*ppos > 0 || count < 256) return 0; // Stop reading after first call
+//arguments: struct file *file : a pointer to a struct file. this represents the fle being accessed.
+//char_user *ubuf : a buffer in user space where data will be copied.
+//size_t count : number of bytes the user wants to read.
+//loff_t *ppos : the postition in the file. (used for larger files.
 
-    len = snprintf(buf, sizeof(buf), 
+char buf[256];    //Creates a character array (string buffer) of 256 bytes.
+    int len;       // Will store the length of the formatted string.
+
+    if (*ppos > 0 || count < 256) return 0; // Stop reading after first call (if file has been read before, stop reading again).
+
+    len = snprintf(buf, sizeof(buf),     //snprintf prevents buffer overflows by ensuring we don’t write past the allocated size (sizeof(buf)). 
+                                        //thats why we use snprintf rather than sprintf.
+                                        //If the formatted string is longer than buf can hold, it gets truncated safely.
+                                        //snprintf returns number of characters in string. len = this number.
         "Filter Mode: %d\nTCP Packets: %u\nUDP Packets: %u\n",
         filter_mode, port_usage[80], port_usage[53]); // Example: HTTP and DNS ports
 
-    if (copy_to_user(ubuf, buf, len)) return -EFAULT;
+//Shows the number of TCP packets on port 80 (HTTP) and port 50(DNS)
 
-    *ppos = len;
-    return len;
+    if (copy_to_user(ubuf, buf, len)) return -EFAULT; //moves data from buf(kernal space) to ubuf(user space)
+                                                        //if copy_to_user fails, return -EFAULT (error : bad memory access)
+
+    *ppos = len;        //updates file position so the next read starts from end.
+    return len;           //tells user how many bytes were actually written
 }
 
 static const struct proc_ops proc_fops = {
-    .proc_read = proc_read, // Call our function when reading /proc/sniffer_stats
+    .proc_read = proc_read, // Call our function when uder reads /proc/sniffer_stats
+                            //this is the only operation defined, so file is read-only.
 };
 
 
@@ -285,7 +298,10 @@ static int __init sniffer_init(void) {
     }
 
 // Create the /proc entry
-    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops);
+    proc_entry = proc_create("sniffer_stats", 0666, NULL, &proc_fops); // creates a file /proc/sniffer_stats
+                                                                        // permission = 0666 meaning read and write for everyone
+                                                                        //Links the file to proc_fops, meaning:
+                                                                        //When a user reads /proc/sniffer_stats, it calls proc_read().
     if (!proc_entry) {
         printk(KERN_ERR "sniffer: Failed to create /proc/sniffer_stats\n");
 
@@ -305,7 +321,7 @@ static int __init sniffer_init(void) {
 // =====================================
 
 static void __exit sniffer_exit(void) {
-proc_remove(proc_entry);  // Remove /proc/sniffer_stats
+proc_remove(proc_entry);  // Remove /proc/sniffer_stats - prevents leaving junk files in/proc.
     nf_unregister_net_hook(&init_net, &nfho);
     unregister_chrdev(major_num, DEVICE_NAME);
     printk(KERN_INFO "sniffer: Module unloaded\n");
