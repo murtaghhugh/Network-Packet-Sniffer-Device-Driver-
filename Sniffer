@@ -15,7 +15,7 @@
 
 // Filesystem & Character Device Headers
 #include <linux/fs.h>                       // File Operations -> (create, read, write)
-#include <linux/proc_fs.h>                  // Creates entries in /proc
+#include <linux/proc_fs.h>                  // Creates entries in /proc (to read sniffer stats)
 
 // Synchronisation & Scheduling
 #include <linux/mutex.h>                    // Mutual Exclusion to Protect Shared Resources
